@@ -58,7 +58,7 @@
             , <&key_physical_attrs 100 100 982 368 (-3328) 1032 418>
             , <&key_physical_attrs 100 100 1060 320 (-3319) 1110 370>
             ;
-
+};
     default_transform: keymap_transform_0 {
 		compatible = "zmk,matrix-transform";
         columns = <12>;
