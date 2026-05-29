@@ -29,7 +29,7 @@
 / {
     // custom shift using mod-morph 
 
-    behaviors {
+              behaviors {
         cmqus: comma_question {
             compatible = "zmk,behavior-mod-morph";
             label = "COMMA_QUESTION";
@@ -39,24 +39,85 @@
             mods = <(MOD_LSFT|MOD_RSFT)>;
         };
 
+        td0: tap_dance_0 {
+            compatible = "zmk,behavior-tap-dance";
+            #binding-cells = <0>;
+            tapping-term-ms = <300>;
+            bindings = <&kp LBRC>, <&kp RBRC>, <&kp LBKT>, <&kp RBKT>;
+        };
+
         dtsmi: dot_semi {
             compatible = "zmk,behavior-mod-morph";
             label = "DOT_SEMI";
             #binding-cells = <0>;
             bindings = <&kp DOT>, <&kp SEMI>;
-
             mods = <(MOD_LSFT|MOD_RSFT)>;
+        };
+
+        hm_rick: hmrick {
+            compatible = "zmk,behavior-hold-tap";
+            label = "HMRICK";
+            bindings = <&kp>, <&kp>;
+            #binding-cells = <2>;
+            flavor = "tap-preferred";
+            tapping-term-ms = <175>; // triggers the hold behavior when the tapping-term-ms has expired
+            quick-tap-ms = <150>; // If you press a tapped hold-tap again within quick-tap-ms milliseconds of the first press, it will always trigger the tap behavior.
+            require-prior-idle-ms = <185>; // like quick-tap-ms however it will apply for any non-modifier key pressed before it
+        };
+
+        ht: hold_tap {
+            compatible = "zmk,behavior-hold-tap";
+            label = "HOLD_TAP";
+            bindings = <&kp>, <&kp>;
+            #binding-cells = <2>;
+            flavor = "tap-preferred";
+            tapping-term-ms = <200>;
+        };
+
+        as_ht: autoshift_hold_tap {
+            compatible = "zmk,behavior-hold-tap";
+            label = "AUTOSHIFT_HOLD_TAP";
+            #binding-cells = <2>;
+            tapping-term-ms = <200>;
+            bindings = <&shifted>, <&kp>;
+        };
+
+        sticky: sticky {
+            compatible = "zmk,behavior-sticky-key";
+            label = "STICKY";
+            bindings = <&kp>;
+            #binding-cells = <1>;
+            release-after-ms = <10000>;
         };
     };
 
     macros {
-        Hiragana: Hiragana {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&kp LC(SPACE)>;
-            label = "HIRAGANA";
+        shifted: macro_shifted_kp {
+            #binding-cells = <1>;
+            label = "MACRO_SHIFTED_KP";
+            compatible = "zmk,behavior-macro-one-param";
+            bindings =
+                <&macro_press &kp LSHFT>,
+                <&macro_param_1to1 &macro_tap &kp MACRO_PLACEHOLDER>,
+                <&macro_release &kp LSHFT>;
         };
-    };
+
+        as: autoshift {
+            compatible = "zmk,behavior-macro-one-param";
+            #binding-cells = <1>;
+            label = "AUTOSHIFT_KP";
+            bindings =
+                <&macro_press>,
+                <&macro_param_1to1>,
+                <&macro_param_1to2>,
+                <&as_ht MACRO_PLACEHOLDER MACRO_PLACEHOLDER>,
+                <&macro_pause_for_release>,
+                <&macro_release>,
+                <&macro_param_1to1>,
+                <&macro_param_1to2>,
+                <&as_ht MACRO_PLACEHOLDER MACRO_PLACEHOLDER>;
+        };
+        };
 
     keymap {
         compatible = "zmk,keymap";
