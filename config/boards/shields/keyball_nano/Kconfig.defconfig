@@ -1,7 +1,7 @@
 if SHIELD_KEYBALL39_RIGHT
 
 config ZMK_KEYBOARD_NAME
-	default "Keyball39"
+	default "flatball"
 
 config ZMK_SPLIT_BLE_ROLE_CENTRAL
 	default y
