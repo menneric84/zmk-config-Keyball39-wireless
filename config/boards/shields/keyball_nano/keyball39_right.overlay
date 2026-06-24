@@ -47,8 +47,6 @@
     };
 };
 
-#include <zephyr/dt-bindings/input/input-event-codes.h>
-
 &spi1 {
     status = "okay";
     compatible = "nordic,nrf-spim";
@@ -59,18 +57,11 @@
 
     trackball: trackball@0 {
         status = "okay";
-        compatible = "pixart,pmw3610-alt";
+        compatible = "pixart,pmw3610";
         reg = <0>;
-        /* 1 MHz (was 2 MHz): more timing margin on the electrically marginal
-         * 3-wire SPI bus, reducing corrupted reads. Negligible latency cost. */
-        spi-max-frequency = <1000000>;
+        spi-max-frequency = <2000000>;
         irq-gpios = <&gpio1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-        cpi = <600>;
-        invert-y;
-        force-awake;
-        evt-type = <INPUT_EV_REL>;
-        x-input-code = <INPUT_REL_X>;
-        y-input-code = <INPUT_REL_Y>;
+	scroll-layers = <5>;
     };
 };
 
@@ -78,5 +69,6 @@
   trackball_listener {
     compatible = "zmk,input-listener";
     device = <&trackball>;
+
   };
 };
