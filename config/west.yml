@@ -11,6 +11,6 @@ manifest:
       import: app/west.yml
     - name: badjeff-zmk-pmw3610-driver
       remote: menneric84
-      revision: 83614ed247b15005377ca53aa8aee5ec0e7e44c2
+      revision: 8020cea1824a49968bf1fa1438d3c0467b1d953f
   self:
     path: config
