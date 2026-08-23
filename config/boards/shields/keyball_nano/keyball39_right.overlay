@@ -61,8 +61,10 @@
         reg = <0>;
         spi-max-frequency = <2000000>;
         irq-gpios = <&gpio1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-	scroll-layers = <5>;
-	snipe-layers = <6>;
+	/* Layer 6 is the only trackball-modifier layer the keymap can actually
+	 * reach (&lt 6 ESCAPE); layers 4 and 5 have no activation binding. */
+	scroll-layers = <5 6>;
+	snipe-layers = <>;
     };
 };
 

@@ -854,11 +854,22 @@ static int pmw3610_init(const struct device *dev) {
     return 0;
 }
 
+/*
+ * Emit a layer list with a trailing sentinel. Either list is allowed to be
+ * empty, and a zero-length array initializer is not valid C -- the sentinel
+ * keeps the array well formed. It is never read: the matching loops are
+ * bounded by DT_PROP_LEN, which does not count it.
+ */
+#define PMW3610_LAYER_ELEM(node_id, prop, idx) DT_PROP_BY_IDX(node_id, prop, idx),
+
+#define PMW3610_LAYER_ARRAY(n, prop)                                                               \
+    {DT_FOREACH_PROP_ELEM(DT_DRV_INST(n), prop, PMW3610_LAYER_ELEM) - 1}
+
 #define PMW3610_DEFINE(n)                                                                          \
     static struct pmw3610_data data##n;                                                            \
                                                                                                    \
-    static const int32_t scroll_layers##n[] = DT_PROP(DT_DRV_INST(n), scroll_layers);               \
-    static const int32_t snipe_layers##n[] = DT_PROP(DT_DRV_INST(n), snipe_layers);                 \
+    static const int32_t scroll_layers##n[] = PMW3610_LAYER_ARRAY(n, scroll_layers);               \
+    static const int32_t snipe_layers##n[] = PMW3610_LAYER_ARRAY(n, snipe_layers);                 \
                                                                                                    \
     static const struct pmw3610_config config##n = {                                               \
         .irq_gpio = GPIO_DT_SPEC_INST_GET(n, irq_gpios),                                           \
