@@ -1,0 +1,28 @@
+description: PixArt PMW3610 optical trackball sensor
+
+compatible: "pixart,pmw3610"
+
+include: spi-device.yaml
+
+properties:
+  irq-gpios:
+    type: phandle-array
+    required: true
+    description: Motion interrupt pin, asserted low by the sensor.
+
+  scroll-layers:
+    type: array
+    default: []
+    description: Layers on which ball movement is reported as scroll wheel.
+
+  snipe-layers:
+    type: array
+    default: []
+    description: Layers on which the sensor drops to PMW3610_SNIPE_CPI.
+
+  automouse-layer:
+    type: int
+    default: 0
+    description: |
+      Layer activated automatically when the ball moves. Zero disables the
+      feature; layer 0 cannot be used as an automouse layer.

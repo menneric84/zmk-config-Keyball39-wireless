@@ -7,7 +7,7 @@ ZMK firmware configuration for a Keyball39 split keyboard with a PMW3610 trackba
 ## Architecture
 
 - **Firmware framework:** ZMK (v0.2) via Zephyr RTOS
-- **Trackball driver:** `zmk-pmw3610-driver` from kumamuk-git (external West module)
+- **Trackball driver:** in-repo, at `drivers/input/pmw3610.c`. This repo doubles as a Zephyr module (`zephyr/module.yml` at the root), which ZMK's build workflow picks up automatically via `-DZMK_EXTRA_MODULES`. There is no external driver dependency.
 - **Board:** nice_nano_v2 (both halves)
 - **Shield definition:** `config/boards/shields/keyball_nano/` — custom shield with physical layout, matrix transform, GPIO pin mappings, I2C/OLED config, and SPI trackball wiring
 - **Build system:** West (Zephyr's meta-tool); manifest in `config/west.yml`
@@ -21,6 +21,26 @@ ZMK firmware configuration for a Keyball39 split keyboard with a PMW3610 trackba
 - `config/boards/shields/keyball_nano/keyball39_left.overlay` — left-half devicetree overlay (column GPIOs)
 - `config/boards/shields/keyball_nano/keyball39.dtsi` — shared devicetree (matrix, physical layout, OLED, I2C)
 - `build.yaml` — GitHub Actions build matrix (left, right, settings_reset)
+- `drivers/input/pmw3610.c` — trackball driver
+- `Kconfig`, `CMakeLists.txt`, `zephyr/module.yml`, `dts/bindings/input/` — module plumbing that makes the repo itself a Zephyr module
+
+## Trackball driver notes
+
+The sensor shares a power rail with the BLE radio, so SPI transactions get
+corrupted by radio bursts as a matter of course. The driver treats that as
+normal and recovers rather than failing:
+
+- Chip-select is released on every exit path. Leaving CS asserted after a
+  failed transfer is what strands the sensor mid-transaction, and that state
+  survives a button reset -- only power loss clears it.
+- Init retries indefinitely with backoff instead of failing permanently.
+- A desync is repaired at runtime, triggered either by consecutive transfer
+  failures or by a background health poll. Recovery holds CS high to
+  resynchronize the sensor bus before re-running init.
+
+Speed is tuned via `CONFIG_PMW3610_CPI` in hardware steps of 200. There is
+deliberately no software divisor: dividing counts per report discards fine
+movement with no remainder carried over.
 
 ## Build
 

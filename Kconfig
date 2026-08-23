@@ -1,0 +1,145 @@
+# PMW3610 trackball sensor driver (in-repo Zephyr module).
+
+menuconfig PMW3610
+    bool "Enable PMW3610 optical trackball sensor"
+    depends on SPI && INPUT
+    help
+      Driver for the PixArt PMW3610 optical motion sensor over 3-wire SPI.
+
+if PMW3610
+
+config PMW3610_CPI
+    int "Cursor sensitivity in CPI"
+    default 600
+    range 200 3200
+    help
+      Hardware resolution, in steps of 200 CPI. Values are applied to the
+      sensor directly, so fine movement is never lost to rounding.
+
+config PMW3610_SNIPE_CPI
+    int "Cursor sensitivity in CPI while a snipe layer is active"
+    default 200
+    range 200 3200
+
+config PMW3610_SCROLL_TICK
+    int "Accumulated counts required to emit one scroll tick"
+    default 32
+
+config PMW3610_SMART_ALGORITHM
+    bool "Enable the sensor's surface-coverage enhancement algorithm"
+    default y
+
+config PMW3610_FORCE_AWAKE
+    bool "Keep the sensor in RUN mode instead of letting it downshift"
+
+config PMW3610_RUN_DOWNSHIFT_TIME_MS
+    int "Time before the sensor drops from RUN to REST1 mode"
+    default 128
+    range 32 8160
+
+config PMW3610_REST1_SAMPLE_TIME_MS
+    int "Sampling period while in REST1 mode"
+    default 40
+    range 10 2550
+
+config PMW3610_REST1_DOWNSHIFT_TIME_MS
+    int "Time before the sensor drops from REST1 to REST2 mode"
+    default 9600
+
+choice
+    prompt "Polling rate"
+    default PMW3610_POLLING_RATE_125
+
+config PMW3610_POLLING_RATE_125
+    bool "125 Hz"
+
+config PMW3610_POLLING_RATE_250
+    bool "250 Hz"
+
+config PMW3610_POLLING_RATE_125_SW
+    bool "125 Hz, sampled at 250 Hz and pair-averaged in software"
+    help
+      Runs the sensor at 250 Hz but reports every second sample with the
+      two deltas summed. Smooths tracking on marginal surfaces.
+
+endchoice
+
+choice
+    prompt "Sensor orientation"
+    default PMW3610_ORIENTATION_0
+
+config PMW3610_ORIENTATION_0
+    bool "0 degrees"
+
+config PMW3610_ORIENTATION_90
+    bool "90 degrees"
+
+config PMW3610_ORIENTATION_180
+    bool "180 degrees"
+
+config PMW3610_ORIENTATION_270
+    bool "270 degrees"
+
+endchoice
+
+config PMW3610_INVERT_X
+    bool "Invert the X axis"
+
+config PMW3610_INVERT_Y
+    bool "Invert the Y axis"
+
+config PMW3610_INVERT_SCROLL_X
+    bool "Invert horizontal scroll direction"
+    default PMW3610_INVERT_X
+
+config PMW3610_INVERT_SCROLL_Y
+    bool "Invert vertical scroll direction"
+    default PMW3610_INVERT_Y
+
+config PMW3610_AUTOMOUSE_TIMEOUT_MS
+    int "How long the automouse layer stays active after movement stops"
+    default 400
+    help
+      Only used when the devicetree node sets a non-zero automouse-layer.
+
+config PMW3610_MOVEMENT_THRESHOLD
+    int "Movement magnitude required to activate the automouse layer"
+    default 5
+
+comment "Resilience"
+
+config PMW3610_INIT_RETRY_BACKOFF_MS
+    int "Initial delay before retrying a failed init sequence"
+    default 50
+    help
+      The driver retries initialization indefinitely, doubling this delay
+      after each attempt up to PMW3610_RETRY_BACKOFF_MAX_MS. A single
+      corrupted SPI transaction at boot therefore costs a short delay
+      rather than leaving the trackball dead until the next reset.
+
+config PMW3610_RETRY_BACKOFF_MAX_MS
+    int "Upper bound on the init retry delay"
+    default 2000
+
+config PMW3610_BUS_RECOVERY_HOLD_MS
+    int "How long chip-select is held deasserted to resynchronize the bus"
+    default 20
+    help
+      Holding CS high resets the sensor's SPI state machine. This is what
+      lets the driver recover from a desync in software; without it the
+      framing stays misaligned until the sensor loses power.
+
+config PMW3610_MAX_CONSECUTIVE_ERRORS
+    int "Consecutive SPI failures that trigger a full reinitialization"
+    default 3
+
+config PMW3610_HEALTH_POLL_INTERVAL_MS
+    int "Interval between background sensor health checks (0 disables)"
+    default 5000
+    help
+      Periodically reads the product ID and reinitializes the sensor if it
+      does not answer correctly. This is the only thing that catches a
+      sensor that has stopped asserting its motion interrupt entirely,
+      since in that state no other driver code ever runs.
+
+endif # PMW3610
