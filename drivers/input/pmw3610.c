@@ -155,33 +155,19 @@ static int _reg_write(const struct device *dev, uint8_t reg, uint8_t val) {
     return err ? err : cs_err;
 }
 
-/* Writes a run of registers with the sensor's SPI clock held on throughout. */
-static int burst_write(const struct device *dev, const uint8_t *addr, const uint8_t *buf,
-                       size_t size) {
-    int err;
-
-    err = _reg_write(dev, PMW3610_REG_SPI_CLK_ON_REQ, PMW3610_SPI_CLOCK_CMD_ENABLE);
+static int reg_write(const struct device *dev, uint8_t reg, uint8_t val) {
+    int err = _reg_write(dev, PMW3610_REG_SPI_CLK_ON_REQ, PMW3610_SPI_CLOCK_CMD_ENABLE);
     if (err) {
         return err;
     }
 
-    for (size_t i = 0; i < size; i++) {
-        err = _reg_write(dev, addr[i], buf[i]);
-        if (err) {
-            LOG_ERR("Burst write failed at index %u", (unsigned int)i);
-            break;
-        }
-    }
+    err = _reg_write(dev, reg, val);
 
-    /* Always attempt to drop the clock request, even after a failure, so the
-     * sensor is not left burning power with its clock forced on. */
+    /* Drop the clock request even after a failure, so the sensor is not left
+     * burning power with its clock forced on. */
     int clk_err = _reg_write(dev, PMW3610_REG_SPI_CLK_ON_REQ, PMW3610_SPI_CLOCK_CMD_DISABLE);
 
     return err ? err : clk_err;
-}
-
-static int reg_write(const struct device *dev, uint8_t reg, uint8_t val) {
-    return burst_write(dev, &reg, &val, 1);
 }
 
 static int motion_burst_read(const struct device *dev, uint8_t *buf, size_t burst_size) {
@@ -262,16 +248,36 @@ static int set_cpi(const struct device *dev, uint32_t cpi) {
         return -EINVAL;
     }
 
-    /* Resolution is expressed in hardware steps of 200 CPI. */
+    /* Resolution is expressed in hardware steps of 200 CPI, and the register
+     * holding it lives on register page 1. */
     uint8_t value = cpi / 200;
 
-    uint8_t addr[] = {PMW3610_REG_SPI_PAGE0, PMW3610_REG_RES_STEP, PMW3610_REG_SPI_PAGE0};
-    uint8_t buf[] = {0xFF, value, 0x00};
+    /* Treat the resolution as unknown for the duration: if any step below
+     * fails, the caller must not believe the cached value. */
+    data->curr_cpi = 0;
 
-    int err = burst_write(dev, addr, buf, 3);
+    int err = _reg_write(dev, PMW3610_REG_SPI_CLK_ON_REQ, PMW3610_SPI_CLOCK_CMD_ENABLE);
     if (err) {
-        LOG_ERR("Failed to set CPI");
         return err;
+    }
+
+    err = _reg_write(dev, PMW3610_REG_SPI_PAGE0, 0xFF);
+    if (!err) {
+        err = _reg_write(dev, PMW3610_REG_RES_STEP, value);
+    }
+
+    /*
+     * The page must be restored even when the write above failed. Leaving the
+     * sensor on page 1 makes every later read -- motion bursts included --
+     * return unrelated registers, which surfaces as scrambled axes rather
+     * than as an error, and persists until the sensor is reinitialized.
+     */
+    int page_err = _reg_write(dev, PMW3610_REG_SPI_PAGE0, 0x00);
+    int clk_err = _reg_write(dev, PMW3610_REG_SPI_CLK_ON_REQ, PMW3610_SPI_CLOCK_CMD_DISABLE);
+
+    if (err || page_err || clk_err) {
+        LOG_ERR("Failed to set CPI (write %d, page restore %d, clock %d)", err, page_err, clk_err);
+        return err ? err : (page_err ? page_err : clk_err);
     }
 
     LOG_INF("CPI set to %u (reg 0x%x)", cpi, value);
@@ -657,7 +663,11 @@ static int pmw3610_report_data(const struct device *dev) {
     int err = set_cpi_if_needed(dev, input_mode == PMW3610_MODE_SNIPE ? CONFIG_PMW3610_SNIPE_CPI
                                                                      : CONFIG_PMW3610_CPI);
     if (err) {
-        bus_error(dev);
+        /* Unlike a failed read, this leaves the sensor's register page in an
+         * unknown state, and reads taken from the wrong page come back as
+         * plausible-looking nonsense rather than as errors. Reinitialize now
+         * instead of waiting for the error count to build. */
+        pmw3610_restart(dev, "CPI update failed, register page is uncertain");
         return err;
     }
 
