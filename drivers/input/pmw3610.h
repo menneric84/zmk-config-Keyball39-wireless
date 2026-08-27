@@ -37,6 +37,9 @@ extern "C" {
 #define PMW3610_REG_DELTA_X_L 0x03
 #define PMW3610_REG_DELTA_Y_L 0x04
 #define PMW3610_REG_DELTA_XY_H 0x05
+#define PMW3610_REG_SQUAL 0x06
+#define PMW3610_REG_SHUTTER_HIGHER 0x07
+#define PMW3610_REG_SHUTTER_LOWER 0x08
 #define PMW3610_REG_PERFORMANCE 0x11
 #define PMW3610_REG_MOTION_BURST 0x12
 #define PMW3610_REG_RUN_DOWNSHIFT 0x1B
@@ -62,6 +65,7 @@ extern "C" {
 #define PMW3610_X_L_POS 1
 #define PMW3610_Y_L_POS 2
 #define PMW3610_XY_H_POS 3
+#define PMW3610_SQUAL_POS 4
 #define PMW3610_SHUTTER_H_POS 5
 #define PMW3610_SHUTTER_L_POS 6
 
@@ -133,6 +137,7 @@ struct pmw3610_data {
     struct k_work_delayable health_work;
     uint32_t consecutive_errs;
     uint32_t health_fails;
+    int64_t last_report_time;
 
     bool ready;
 };

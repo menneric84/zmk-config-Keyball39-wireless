@@ -393,8 +393,23 @@ static int pmw3610_async_init_configure(const struct device *dev) {
         err = reg_read(dev, reg, &buf);
     }
 
-    /* The sensor has just been reset, so any cached CPI is stale. */
+    /*
+     * Everything the driver caches about the sensor is invalidated by the
+     * power-up reset that preceded this step. Clearing it here rather than in
+     * pmw3610_init is what makes a reinitialization a genuine fresh start --
+     * sw_smart_flag in particular, because a stale value leaves the driver
+     * believing the smart-mode register holds a value the reset just cleared,
+     * and it would not correct it until the shutter next crossed the
+     * threshold. Resetting to false lets the first motion report re-establish
+     * the correct state.
+     */
     data->curr_cpi = 0;
+    data->sw_smart_flag = false;
+#ifdef CONFIG_PMW3610_POLLING_RATE_125_SW
+    data->last_poll_time = 0;
+    data->last_x = 0;
+    data->last_y = 0;
+#endif
 
     if (!err) {
         err = set_cpi(dev, CONFIG_PMW3610_CPI);
@@ -518,6 +533,50 @@ static void pmw3610_async_init(struct k_work *work) {
 
 #if CONFIG_PMW3610_HEALTH_POLL_INTERVAL_MS > 0
 /*
+ * Detect a motion burst that has lost byte alignment.
+ *
+ * A single-register read is self-framing -- address out, one byte back -- so
+ * it keeps answering correctly even while the multi-byte burst is shifted.
+ * That is why polling the product ID alone reports a healthy sensor while
+ * tracking is visibly wrong. The only way to see the misalignment is to read
+ * the same registers both ways and compare.
+ *
+ * SQUAL and the shutter value are stable while the ball is still, so the
+ * caller runs this only when no motion has been reported recently.
+ */
+static int check_burst_framing(const struct device *dev) {
+    uint8_t burst[PMW3610_BURST_SIZE];
+    uint8_t squal, shutter_h, shutter_l;
+
+    int err = motion_burst_read(dev, burst, sizeof(burst));
+    if (err) {
+        return err;
+    }
+
+    err = reg_read(dev, PMW3610_REG_SQUAL, &squal);
+    if (!err) {
+        err = reg_read(dev, PMW3610_REG_SHUTTER_HIGHER, &shutter_h);
+    }
+    if (!err) {
+        err = reg_read(dev, PMW3610_REG_SHUTTER_LOWER, &shutter_l);
+    }
+    if (err) {
+        return err;
+    }
+
+    if (burst[PMW3610_SQUAL_POS] != squal || burst[PMW3610_SHUTTER_H_POS] != shutter_h ||
+        burst[PMW3610_SHUTTER_L_POS] != shutter_l) {
+        LOG_WRN("Burst framing mismatch: burst squal 0x%x shutter 0x%x%x, "
+                "registers 0x%x 0x%x%x",
+                burst[PMW3610_SQUAL_POS], burst[PMW3610_SHUTTER_H_POS],
+                burst[PMW3610_SHUTTER_L_POS], squal, shutter_h, shutter_l);
+        return -EILSEQ;
+    }
+
+    return 0;
+}
+
+/*
  * A sensor that has desynced usually stops asserting its motion pin, so no
  * interrupt arrives and no other code path in this driver ever runs again.
  * Nothing would notice the failure without an independent timer, which is
@@ -537,7 +596,21 @@ static void pmw3610_health_check(struct k_work *work) {
     int err = reg_read(dev, PMW3610_REG_PRODUCT_ID, &product_id);
 
     if (!err && product_id == PMW3610_PRODUCT_ID) {
+        /* The sensor is answering, but that only clears single-register
+         * reads. Confirm the burst is still aligned too, and only while the
+         * ball is idle, since the compared values move when it is not. */
+        if ((k_uptime_get() - data->last_report_time) < 1000) {
+            data->health_fails = 0;
+            goto reschedule;
+        }
+
+        if (check_burst_framing(dev) != -EILSEQ) {
+            data->health_fails = 0;
+            goto reschedule;
+        }
+
         data->health_fails = 0;
+        pmw3610_restart(dev, "motion burst lost byte alignment");
         goto reschedule;
     }
 
@@ -678,6 +751,7 @@ static int pmw3610_report_data(const struct device *dev) {
     }
 
     bus_ok(dev);
+    data->last_report_time = k_uptime_get();
 
     int16_t raw_x = TOINT16((buf[PMW3610_X_L_POS] + ((buf[PMW3610_XY_H_POS] & 0xF0) << 4)), 12);
     int16_t raw_y = TOINT16((buf[PMW3610_Y_L_POS] + ((buf[PMW3610_XY_H_POS] & 0x0F) << 8)), 12);
