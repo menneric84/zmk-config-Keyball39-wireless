@@ -141,7 +141,8 @@ config PMW3610_MAX_DELTA
       the host turns into a cursor jump to the edge of the screen. Real
       movement is bounded: at 600 CPI and a 250 Hz sample rate, 150 counts
       in one report is already about 60 inches per second. Anything larger
-      is bus corruption, so the report is dropped instead of sent.
+      is bus corruption, so the report is dropped instead of sent. The limit
+      is in sensor counts, so raise it in proportion if CPI goes up.
 
 config PMW3610_HEALTH_POLL_INTERVAL_MS
     int "Interval between background sensor health checks (0 disables)"

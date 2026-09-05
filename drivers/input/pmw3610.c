@@ -473,6 +473,7 @@ static void pmw3610_restart(const struct device *dev, const char *reason) {
     data->ready = false;
     data->consecutive_errs = 0;
     data->health_fails = 0;
+    data->framing_fails = 0;
     data->implausible_reports = 0;
     data->async_init_step = ASYNC_INIT_STEP_POWER_UP;
 
@@ -600,17 +601,36 @@ static void pmw3610_health_check(struct k_work *work) {
         /* The sensor is answering, but that only clears single-register
          * reads. Confirm the burst is still aligned too, and only while the
          * ball is idle, since the compared values move when it is not. */
-        if ((k_uptime_get() - data->last_report_time) < 1000) {
-            data->health_fails = 0;
-            goto reschedule;
-        }
-
-        if (check_burst_framing(dev) != -EILSEQ) {
-            data->health_fails = 0;
-            goto reschedule;
-        }
-
         data->health_fails = 0;
+
+        if ((k_uptime_get() - data->last_report_time) < 1000) {
+            goto reschedule;
+        }
+
+        int framing = check_burst_framing(dev);
+
+        if (framing == 0) {
+            data->framing_fails = 0;
+            goto reschedule;
+        }
+
+        if (framing != -EILSEQ) {
+            /* The check could not complete. That says nothing about the
+             * framing either way, so leave the evidence as it stands. */
+            goto reschedule;
+        }
+
+        /* The comparison is exact, and the sensor keeps sampling between the
+         * burst and the register reads that follow it, so a shutter or SQUAL
+         * value that wobbles by one count in that gap looks identical to a
+         * frame slip. A real slip does not repair itself, so make it prove
+         * itself on a second poll rather than spending a reinitialization --
+         * and the cursor -- on a stale byte. */
+        if (++data->framing_fails < 2) {
+            goto reschedule;
+        }
+
+        data->framing_fails = 0;
         pmw3610_restart(dev, "motion burst lost byte alignment");
         goto reschedule;
     }
@@ -775,7 +795,13 @@ static int pmw3610_report_data(const struct device *dev) {
         return 0;
     }
 
-    data->implausible_reports = 0;
+    /* Decay rather than clear. A misframed burst still decodes as a small
+     * delta much of the time -- whatever byte lands in the high nibble is
+     * often near zero -- so clearing on every plausible report would let a
+     * persistently broken frame stay below the threshold indefinitely. */
+    if (data->implausible_reports > 0) {
+        data->implausible_reports--;
+    }
 #endif
 
     data->last_report_time = k_uptime_get();
@@ -787,12 +813,26 @@ static int pmw3610_report_data(const struct device *dev) {
     int16_t shutter =
         ((int16_t)(buf[PMW3610_SHUTTER_H_POS] & 0x01) << 8) + buf[PMW3610_SHUTTER_L_POS];
 
-    if (data->sw_smart_flag && shutter < PMW3610_SMART_SHUTTER_THRESHOLD) {
-        reg_write(dev, PMW3610_REG_SMART_MODE, 0x00);
-        data->sw_smart_flag = false;
-    } else if (!data->sw_smart_flag && shutter > PMW3610_SMART_SHUTTER_THRESHOLD) {
-        reg_write(dev, PMW3610_REG_SMART_MODE, 0x80);
-        data->sw_smart_flag = true;
+    bool smart_wanted = data->sw_smart_flag;
+
+    if (shutter < PMW3610_SMART_SHUTTER_THRESHOLD) {
+        smart_wanted = false;
+    } else if (shutter > PMW3610_SMART_SHUTTER_THRESHOLD) {
+        smart_wanted = true;
+    }
+
+    if (smart_wanted != data->sw_smart_flag) {
+        /* Cache the new state only once the sensor has actually taken it.
+         * This is the one register write left in the report path, and its
+         * result was previously discarded: a failure would leave the driver
+         * believing a mode the sensor is not in, and it would not try again
+         * until the shutter crossed the threshold from the other side. */
+        int smart_err = reg_write(dev, PMW3610_REG_SMART_MODE, smart_wanted ? 0x80 : 0x00);
+        if (smart_err) {
+            LOG_WRN("Smart mode write failed (%d), retrying on the next report", smart_err);
+        } else {
+            data->sw_smart_flag = smart_wanted;
+        }
     }
 #endif
 

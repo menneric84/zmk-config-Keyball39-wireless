@@ -138,6 +138,7 @@ struct pmw3610_data {
     uint32_t consecutive_errs;
     uint32_t implausible_reports;
     uint32_t health_fails;
+    uint32_t framing_fails;
     int64_t last_report_time;
 
     bool ready;
