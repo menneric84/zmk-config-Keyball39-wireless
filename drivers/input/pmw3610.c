@@ -473,6 +473,7 @@ static void pmw3610_restart(const struct device *dev, const char *reason) {
     data->ready = false;
     data->consecutive_errs = 0;
     data->health_fails = 0;
+    data->implausible_reports = 0;
     data->async_init_step = ASYNC_INIT_STEP_POWER_UP;
 
     set_interrupt(dev, false);
@@ -751,10 +752,33 @@ static int pmw3610_report_data(const struct device *dev) {
     }
 
     bus_ok(dev);
-    data->last_report_time = k_uptime_get();
 
     int16_t raw_x = TOINT16((buf[PMW3610_X_L_POS] + ((buf[PMW3610_XY_H_POS] & 0xF0) << 4)), 12);
     int16_t raw_y = TOINT16((buf[PMW3610_Y_L_POS] + ((buf[PMW3610_XY_H_POS] & 0x0F) << 8)), 12);
+
+    /* A burst corrupted by a radio glitch still decodes as a well-formed
+     * 12-bit delta -- there is no error to catch -- and the host renders it
+     * as the cursor teleporting to a corner. The only thing separating it
+     * from real data is magnitude, since a hand cannot move the ball that
+     * far in one 4 ms sample. Drop the whole report rather than clamp it: a
+     * clamped garbage delta is still a jump, just a shorter one. */
+#if CONFIG_PMW3610_MAX_DELTA > 0
+    if (abs(raw_x) > CONFIG_PMW3610_MAX_DELTA || abs(raw_y) > CONFIG_PMW3610_MAX_DELTA) {
+        LOG_WRN("Discarding implausible motion delta (%d, %d)", raw_x, raw_y);
+
+        /* One of these is a glitch. A run of them means the burst is framed
+         * wrong and every future read is garbage too, which only a
+         * reinitialization fixes. */
+        if (++data->implausible_reports >= CONFIG_PMW3610_MAX_CONSECUTIVE_ERRORS) {
+            pmw3610_restart(dev, "repeated implausible motion deltas");
+        }
+        return 0;
+    }
+
+    data->implausible_reports = 0;
+#endif
+
+    data->last_report_time = k_uptime_get();
 
     int16_t x, y;
     apply_orientation(raw_x, raw_y, &x, &y);

@@ -136,6 +136,7 @@ struct pmw3610_data {
 
     struct k_work_delayable health_work;
     uint32_t consecutive_errs;
+    uint32_t implausible_reports;
     uint32_t health_fails;
     int64_t last_report_time;
 

@@ -133,6 +133,16 @@ config PMW3610_MAX_CONSECUTIVE_ERRORS
     int "Consecutive SPI failures that trigger a full reinitialization"
     default 3
 
+config PMW3610_MAX_DELTA
+    int "Largest per-report movement in counts that is treated as real (0 disables)"
+    default 150
+    help
+      A corrupted burst read decodes as a valid-looking 12-bit delta, which
+      the host turns into a cursor jump to the edge of the screen. Real
+      movement is bounded: at 600 CPI and a 250 Hz sample rate, 150 counts
+      in one report is already about 60 inches per second. Anything larger
+      is bus corruption, so the report is dropped instead of sent.
+
 config PMW3610_HEALTH_POLL_INTERVAL_MS
     int "Interval between background sensor health checks (0 disables)"
     default 5000

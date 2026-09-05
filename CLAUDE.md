@@ -34,6 +34,10 @@ normal and recovers rather than failing:
   failed transfer is what strands the sensor mid-transaction, and that state
   survives a button reset -- only power loss clears it.
 - Init retries indefinitely with backoff instead of failing permanently.
+- A motion delta larger than `CONFIG_PMW3610_MAX_DELTA` is discarded. A
+  corrupted burst decodes as a valid 12-bit delta, so the only thing marking
+  it as garbage is its size; unfiltered, it shows up as the cursor jumping to
+  a screen corner.
 - A desync is repaired at runtime, triggered either by consecutive transfer
   failures or by a background health poll. Recovery holds CS high to
   resynchronize the sensor bus before re-running init.
