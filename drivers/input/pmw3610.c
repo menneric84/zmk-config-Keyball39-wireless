@@ -280,6 +280,27 @@ static int set_cpi(const struct device *dev, uint32_t cpi) {
         return err ? err : (page_err ? page_err : clk_err);
     }
 
+    /*
+     * A successful write means the bytes went out, not that the sensor acted
+     * on them. If it missed the page restore, every later read comes back off
+     * page 1: still well formed, still the right size, just a different
+     * register each time. That reaches the host as the ball having changed
+     * orientation and gain rather than as any kind of error, and nothing else
+     * in the driver would notice. Reading back a constant is the only way to
+     * find out, so pay for one read on the rare occasion the page moves.
+     */
+    uint8_t product_id = 0;
+
+    err = reg_read(dev, PMW3610_REG_PRODUCT_ID, &product_id);
+    if (err) {
+        return err;
+    }
+
+    if (product_id != PMW3610_PRODUCT_ID) {
+        LOG_ERR("Sensor did not return to register page 0 (read 0x%x)", product_id);
+        return -EIO;
+    }
+
     LOG_INF("CPI set to %u (reg 0x%x)", cpi, value);
     data->curr_cpi = cpi;
 
